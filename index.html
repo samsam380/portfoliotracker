@@ -178,7 +178,8 @@ header{position:sticky;top:0;z-index:30;background:color-mix(in srgb, var(--bg) 
 .kind{font:500 10px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
   border:1px solid var(--line-2);border-radius:5px;padding:4px 6px;white-space:nowrap}
 .swatch{width:8px;height:8px;border-radius:2px;flex:none}
-.ctot{display:flex;align-items:baseline;gap:18px;justify-content:flex-end;text-align:right}
+.ctot{display:grid;grid-template-columns:repeat(3,auto);align-items:baseline;gap:3px 18px;justify-content:end;text-align:right}
+.ctot .q{grid-column:1 / -1;font-family:var(--mono);font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
 .ctot .u{font-family:var(--mono);font-size:15px;font-weight:500;min-width:112px}
 .ctot .i{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);min-width:150px}
 .ctot .p{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);min-width:42px}
@@ -224,6 +225,7 @@ header{position:sticky;top:0;z-index:30;background:color-mix(in srgb, var(--bg) 
   .row.priced,.rowhead.priced{grid-template-columns:1fr 68px 86px 112px 20px}
   .row .vp,.rowhead .hp{display:none}
   .ctot .i{display:none}
+  .ctot{grid-template-columns:repeat(2,auto)}
   .row .nm,.rowhead > div:first-child,.addrow,.unitrow{padding-left:26px}
   .rowhead .vcell div+div{color:var(--ink-3)}
 }
@@ -239,7 +241,7 @@ header{position:sticky;top:0;z-index:30;background:color-mix(in srgb, var(--bg) 
   .row .qty .u{width:auto;font-size:9.5px}
   .kind{display:none}
   .chd{grid-template-columns:1fr;gap:6px}
-  .ctot{justify-content:flex-start;padding-left:32px}
+  .ctot{grid-template-columns:repeat(3,auto);justify-content:start;padding-left:32px;text-align:left}
   .ctot .u{min-width:0} .ctot .i{display:inline;min-width:0} .ctot .p{min-width:0}
   .cactions{opacity:1}
   .rowhead{font-size:9px}
@@ -491,6 +493,8 @@ const fmtIDR = v => nfIDR.format(Number.isFinite(v)?Math.round(v):0);
 const nfPlainID = (d)=> new Intl.NumberFormat("id-ID",{minimumFractionDigits:0,maximumFractionDigits:d});
 const fmtQty = (v,d,loc)=> v===0||v==null||!Number.isFinite(v) ? ""
   : (loc==="id" ? nfPlainID(d) : nfPlain(d)).format(v);
+const fmtTotalQty = (v,K)=> new Intl.NumberFormat(K.loc==="id"?"id-ID":"en-US",
+  {minimumFractionDigits:K.dec,maximumFractionDigits:K.dec}).format(Number.isFinite(v)?v:0);
 const fmtPct = v => (Number.isFinite(v)?v:0).toFixed(1)+"%";
 
 /* Lenient input parser: accepts 1,234.56 · 1.234,56 · 12 300 · 5k · 2jt · 1,5m · Rp 250.000
@@ -603,11 +607,13 @@ function compute(){
   const r = effRates();
   const out = {classes:[], totalUSD:0, rates:r};
   for(const c of S.classes){
-    let sum = 0;
+    let sum = 0, qty = 0;
     const rows = c.holdings.map(hd => {
+      const amount = +hd.qty || 0;
+      if(Number.isFinite(amount)) qty += amount;
       const usd = holdingUSD(c, hd, r); sum += usd; return {id:hd.id, usd};
     });
-    out.classes.push({id:c.id, usd:sum, rows});
+    out.classes.push({id:c.id, usd:sum, qty, rows});
     out.totalUSD += sum;
   }
   out.totalIDR = r.usdIdr ? out.totalUSD * r.usdIdr : 0;
@@ -729,6 +735,7 @@ function renderClasses(){
           <span class="u" id="cu-${c.id}">—</span>
           <span class="i" id="ci-${c.id}">—</span>
           <span class="p" id="cp-${c.id}"></span>
+          <span class="q" id="cq-${c.id}"></span>
         </div>
       </div>
       ${unitRow}
@@ -759,6 +766,8 @@ function recompute(){
 
   d.classes.forEach((cd,ci)=>{
     const set=(id,txt)=>{const n=document.getElementById(id); if(n) n.textContent=txt;};
+    const c = S.classes[ci], K = KINDS[c.kind] || KINDS.usd;
+    set("cq-"+cd.id, fmtTotalQty(cd.qty,K)+" "+(K.unitPrice?(c.unitLabel||"unit"):K.unit));
     set("cu-"+cd.id, "$"+fmtUSD(cd.usd));
     set("ci-"+cd.id, r.usdIdr ? "Rp "+fmtIDR(cd.usd*r.usdIdr) : "—");
     set("cp-"+cd.id, total>0 ? fmtPct(cd.usd/total*100) : "");
@@ -908,7 +917,7 @@ document.addEventListener("input",(e)=>{
   if(el.dataset.cname!=null){ const c=findClass(el.dataset.cname); if(c){ c.name=el.value; save(); recompute(); } return; }
   if(el.dataset.unitprice!=null){ const c=findClass(el.dataset.unitprice); if(c){ c.unitPriceUsd=parseNum(el.value,4); save(); recompute(); } return; }
   if(el.dataset.unitlabel!=null){ const c=findClass(el.dataset.unitlabel); if(c){ c.unitLabel=el.value; save();
-      document.querySelectorAll(`.cls[data-c="${c.id}"] .qty .u`).forEach(n=>n.textContent=c.unitLabel||"unit"); } return; }
+      document.querySelectorAll(`.cls[data-c="${c.id}"] .qty .u`).forEach(n=>n.textContent=c.unitLabel||"unit"); recompute(); } return; }
 
   if(el.dataset.manual!=null){
     const key = el.dataset.manual, r = effRates();
