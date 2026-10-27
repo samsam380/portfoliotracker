@@ -125,15 +125,26 @@ header{position:sticky;top:0;z-index:30;background:color-mix(in srgb, var(--bg) 
 
 /* allocation */
 .alloc{margin-top:28px}
-.albar{display:flex;gap:var(--gap);height:10px;width:100%}
-.alseg{min-width:3px;border-radius:2px;transition:opacity .12s}
-.albar:hover .alseg{opacity:.45}
-.albar .alseg:hover{opacity:1}
-.alempty{height:10px;border-radius:2px;background:var(--line);width:100%}
-.legend{display:flex;flex-wrap:wrap;gap:6px 20px;margin-top:14px}
-.lg{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2)}
+.allocation-layout{display:flex;align-items:center;gap:32px}
+.alpie{width:220px;max-width:100%;aspect-ratio:1;flex:none}
+.alpie svg{display:block;width:100%;height:100%;overflow:visible}
+.alslice{transition:opacity .12s}
+.alpie:hover .alslice{opacity:.55}
+.alpie .alslice:hover{opacity:1}
+.alempty{fill:var(--line)}
+.legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px;
+  list-style:none;padding:0;margin:0;flex:1;max-width:520px;min-width:0}
+.lg{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2);min-width:0}
 .lg .sw{width:8px;height:8px;border-radius:2px;flex:none}
-.lg b{color:var(--ink);font-weight:500;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.lg .name{flex:1;overflow-wrap:anywhere}
+.lg b{color:var(--ink);font-weight:500;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.allocation-note{grid-column:1 / -1}
+@media (max-width:620px){
+  .allocation-layout{flex-direction:column;gap:20px}
+  .alpie{width:200px}
+  .legend{width:100%;max-width:none;gap:10px 18px}
+}
+@media (max-width:360px){.legend{grid-template-columns:1fr}}
 
 /* ─── rates ──────────────────────────────────────────────────────────────── */
 .rates{display:grid;grid-template-columns:repeat(auto-fit,minmax(184px,1fr));gap:1px;background:var(--line);
@@ -319,8 +330,11 @@ footer button:hover{color:var(--ink)}
     </div>
     <div class="delta veil" id="delta"></div>
     <div class="alloc">
-      <div id="albar"></div>
-      <div class="legend veil" id="legend"></div>
+      <div class="micro">Portfolio allocation</div>
+      <div class="allocation-layout">
+        <div class="alpie veil" id="alpie"></div>
+        <ul class="legend veil" id="legend" aria-label="Asset allocation legend"></ul>
+      </div>
     </div>
   </section>
 
@@ -786,21 +800,32 @@ function recompute(){
 }
 
 function renderAllocation(d){
-  const bar = document.getElementById("albar"), leg = document.getElementById("legend");
+  const chart = document.getElementById("alpie"), leg = document.getElementById("legend");
   const parts = d.classes.map((cd,i)=>({name:S.classes[i].name, usd:cd.usd, color:colorOf(S.classes[i])}))
-                         .filter(p=>p.usd>0).sort((a,b)=>b.usd-a.usd);
+                         .filter(p=>Number.isFinite(p.usd) && p.usd>0).sort((a,b)=>b.usd-a.usd);
   const total = parts.reduce((a,p)=>a+p.usd,0);
   if(!total){
-    bar.innerHTML = `<div class="alempty"></div>`;
-    leg.innerHTML = `<span class="lg dim">Enter amounts below and the allocation appears here.</span>`;
+    chart.innerHTML = `<svg viewBox="0 0 240 240" role="img" aria-label="No allocation to display"><circle class="alempty" cx="120" cy="120" r="108"/></svg>`;
+    leg.innerHTML = `<li class="lg dim allocation-note">Enter amounts below and the allocation appears here.</li>`;
     return;
   }
-  bar.innerHTML = `<div class="albar">` + parts.map(p=>{
+  let angle = -Math.PI/2;
+  const slices = parts.map((p,i)=>{
     const pct = p.usd/total*100;
-    return `<div class="alseg" style="flex:${p.usd.toFixed(6)} 0 0;background:${p.color}"
-      data-tip="${esc(String(p.name).replace(/\|/g,"/"))}|${fmtUSD(p.usd)}|${d.rates.usdIdr?fmtIDR(p.usd*d.rates.usdIdr):"—"}|${fmtPct(pct)}|${p.color}"></div>`;
-  }).join("") + `</div>`;
-  leg.innerHTML = parts.map(p=>`<span class="lg"><span class="sw" style="background:${p.color}"></span>${esc(p.name)} <b>${fmtPct(p.usd/total*100)}</b></span>`).join("");
+    const attrs = `class="alslice" fill="${p.color}" data-tip="${esc(String(p.name).replace(/\|/g,"/"))}|${fmtUSD(p.usd)}|${d.rates.usdIdr?fmtIDR(p.usd*d.rates.usdIdr):"—"}|${fmtPct(pct)}|${p.color}"`;
+    const title = `<title>${esc(p.name)}: ${fmtPct(pct)}</title>`;
+    // An SVG arc cannot draw a full circle with identical start and end points.
+    if(parts.length===1) return `<circle ${attrs} cx="120" cy="120" r="108">${title}</circle>`;
+    const end = i===parts.length-1 ? Math.PI*1.5 : angle + p.usd/total*Math.PI*2;
+    const point = a => `${(120+108*Math.cos(a)).toFixed(6)} ${(120+108*Math.sin(a)).toFixed(6)}`;
+    const path = `M 120 120 L ${point(angle)} A 108 108 0 ${end-angle>Math.PI?1:0} 1 ${point(end)} Z`;
+    angle = end;
+    return `<path ${attrs} d="${path}">${title}</path>`;
+  }).join("");
+  const description = parts.map(p=>`${p.name}: ${fmtPct(p.usd/total*100)}`).join("; ");
+  chart.innerHTML = `<svg viewBox="0 0 240 240" role="img" aria-labelledby="allocation-title allocation-desc">
+    <title id="allocation-title">Portfolio allocation pie chart</title><desc id="allocation-desc">${esc(description)}</desc>${slices}</svg>`;
+  leg.innerHTML = parts.map(p=>`<li class="lg"><span class="sw" style="background:${p.color}"></span><span class="name">${esc(p.name)}</span><b>${fmtPct(p.usd/total*100)}</b></li>`).join("");
 }
 
 function renderDelta(d){
@@ -1093,3 +1118,4 @@ document.addEventListener("visibilitychange",()=>{
 </script>
 </body>
 </html>
+
